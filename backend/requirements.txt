@@ -1,0 +1,15 @@
+torch>=2.0
+torchvision>=0.15
+mediapipe>=0.10.9
+opencv-python>=4.8
+numpy>=1.24
+pyyaml>=6.0
+einops>=0.7
+ptflops>=0.7
+tensorboard>=2.14
+tqdm>=4.66
+pillow>=10.0                    # Korean text rendering in recorder GUI overlay
+
+# Dev / visualization (optional)
+matplotlib>=3.7
+seaborn>=0.12

@@ -1,0 +1,17 @@
+{
+  "signer_id": 1,
+  "class_id": 5,
+  "timestamp": "20260502_094450_071",
+  "fps": 30,
+  "vocabulary_version": 1,
+  "num_frames": 16,
+  "quality": {
+    "num_frames": 16,
+    "left_hand_rate": 1.0,
+    "right_hand_rate": 1.0,
+    "any_hand_rate": 1.0,
+    "both_hands_frames": 16,
+    "face_rate": 1.0,
+    "warn": false
+  }
+}

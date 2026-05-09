@@ -1,0 +1,173 @@
+# KSLR Lab Dataset Training Config
+# 본 파일은 IMPLEMENTATION_PLAN.md §2의 확정 사양을 그대로 반영한다.
+
+experiment:
+  name: kslr_lab_v0
+  seed: 42
+  output_dir: runs/
+
+# ──────────────────────────────────────────────────────────
+# 데이터셋
+# ──────────────────────────────────────────────────────────
+data:
+  raw_dir: data/raw                   # data/raw/{signer_id}/{class_id}/{timestamp}/
+  vocabulary_path: data_collection/vocabulary.yaml
+  num_classes: 10
+  num_signers: 10
+  train_signers: [1, 2, 3, 4, 5, 6, 7, 8]
+  test_signers: [9, 10]               # signer-independent; random split 금지
+  recordings_per_signer_class: 50     # 총 ~5,000 clip
+
+# ──────────────────────────────────────────────────────────
+# Clip / 입력 사양
+# ──────────────────────────────────────────────────────────
+clip:
+  num_frames: 16                      # ≈ 0.53초 @ 30 FPS
+  webcam_fps: 30
+  webcam_resolution: [640, 480]       # OpenCV (width, height) 기본 — 환경에 따라 조정
+
+input:
+  hand:
+    num_hands: 2
+    num_landmarks: 21
+    coord_dims: 3                     # (x, y, z) normalized
+    crop_size: 64
+    crop_margin: 0.25
+  face:
+    num_landmarks: 97                 # FACE_OVAL + LIPS + L/R EYEBROW + nose tip (data_collection.mediapipe_runner.NUM_FACE_LANDMARKS)
+    coord_dims: 3
+    crop_size: 64
+    crop_margin: 0.15
+
+# ──────────────────────────────────────────────────────────
+# MediaPipe Tasks
+# ──────────────────────────────────────────────────────────
+mediapipe:
+  hand:
+    num_hands: 2
+    running_mode: VIDEO
+    min_hand_detection_confidence: 0.5
+    min_hand_presence_confidence: 0.5
+    min_tracking_confidence: 0.5
+    model_asset_path: models_assets/hand_landmarker.task   # 다운로드 경로 (Phase 1에서 fetch)
+  face:
+    num_faces: 1
+    running_mode: VIDEO
+    output_face_blendshapes: false
+    output_facial_transformation_matrixes: false
+    model_asset_path: models_assets/face_landmarker.task
+
+# ──────────────────────────────────────────────────────────
+# 정규화 / Augmentation (data/normalizer.py, data/augment.py)
+# ──────────────────────────────────────────────────────────
+normalize:
+  hand:
+    origin_landmark: 0                # wrist
+    scale_landmarks: [0, 9]           # wrist ↔ middle MCP
+  face:
+    origin_landmark: 1                # nose tip (MediaPipe Face Mesh)
+    scale_landmarks: [61, 291]        # 양쪽 입꼬리
+
+augment:
+  enabled: true                       # train only
+  landmark_noise_sigma: 0.01
+  rotation_deg: 15.0
+  scale_range: [0.9, 1.1]
+  time_jitter_frames: 2
+  color_jitter:
+    brightness: 0.2
+    contrast: 0.2
+  horizontal_flip: false              # 양손 swap은 의미 변경 우려 → 금지
+
+# ──────────────────────────────────────────────────────────
+# 모델 (models/kslr_net.py)
+# ──────────────────────────────────────────────────────────
+model:
+  grain:
+    out_channels: 32
+  cnn_branch:
+    channels: [32, 64, 64, 128]
+    pool_after: [0, 2]                # block index에서 MaxPool 적용
+    out_dim: 128
+  hand_landmark_embed:
+    proj_dim: 64
+    transformer:
+      heads: 4
+      mlp_ratio: 2
+  face_landmark_embed:
+    proj_dim: 64
+    transformer:
+      heads: 4
+      mlp_ratio: 2
+  per_frame_fusion_dim: 192           # plan §6.3 옵션 A: 256→192 (param budget 조정)
+  temporal:
+    dim: 192                          # = per_frame_fusion_dim (kslr_net이 fusion_dim을 사용; 이 값은 informational)
+    depth: 2
+    heads: 4                          # 192 % 4 == 0
+    mlp_ratio: 2
+    dropout: 0.1
+    pos_embed: sinusoidal             # 부족 시 'learned'로 교체
+  irffn:
+    hidden_dim: 576                   # plan §6.3 옵션 B: 4×→3× (192*3=576)
+    dropout: 0.1
+  classifier:
+    out_dim: 10                       # = num_classes
+
+# ──────────────────────────────────────────────────────────
+# 학습 (engine/trainer.py)
+# ──────────────────────────────────────────────────────────
+train:
+  batch_size: 32
+  epochs: 300
+  optimizer:
+    name: adam
+    lr: 1.0e-3
+    weight_decay: 1.0e-4
+  scheduler:
+    name: cosine_with_warmup
+    warmup_epochs: 5
+    min_lr: 1.0e-5
+  loss:
+    name: cross_entropy
+    label_smoothing: 0.1
+  dropout: 0.1
+  grad_clip: 1.0
+  amp: true
+  early_stopping:
+    metric: val_top1
+    patience_epochs: 30
+    mode: max
+  checkpoint:
+    save_best: true
+    save_latest: true
+    save_every_n_epochs: 50
+  logging:
+    backend: tensorboard              # 'tensorboard' | 'wandb'
+    log_every_n_steps: 20
+
+# ──────────────────────────────────────────────────────────
+# 평가 (engine/evaluator.py)
+# ──────────────────────────────────────────────────────────
+eval:
+  metrics: [top1, top3, per_class_f1, confusion_matrix, latency_ms]
+  report_path: runs/{exp_id}/eval_report.json
+  confusion_matrix_path: runs/{exp_id}/confusion_matrix.png
+
+# ──────────────────────────────────────────────────────────
+# 실시간 추론 (realtime/)
+# ──────────────────────────────────────────────────────────
+realtime:
+  buffer_capacity: 16
+  stride: 8                           # latency 예산 따라 4~12로 조정
+  smoothing:
+    method: ema                       # 'ema' | 'majority' | 'none'
+    alpha: 0.6
+  latency_budget_ms: 300
+
+# ──────────────────────────────────────────────────────────
+# 디바이스
+# ──────────────────────────────────────────────────────────
+device:
+  prefer: cuda                        # 'cuda' | 'cpu' — 자동 fallback 허용
+  num_workers: 4
+  pin_memory: true

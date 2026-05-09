@@ -1,0 +1,161 @@
+augment:
+  color_jitter:
+    brightness: 0.2
+    contrast: 0.2
+  enabled: true
+  horizontal_flip: false
+  landmark_noise_sigma: 0.01
+  rotation_deg: 15.0
+  scale_range:
+  - 0.9
+  - 1.1
+  time_jitter_frames: 2
+clip:
+  num_frames: 16
+  webcam_fps: 30
+  webcam_resolution:
+  - 640
+  - 480
+data:
+  num_classes: 10
+  num_signers: 10
+  raw_dir: data/raw
+  recordings_per_signer_class: 50
+  test_signers:
+  - 9
+  - 10
+  train_signers:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  - 7
+  - 8
+  vocabulary_path: data_collection/vocabulary.yaml
+device:
+  num_workers: 4
+  pin_memory: true
+  prefer: cuda
+eval:
+  confusion_matrix_path: runs/{exp_id}/confusion_matrix.png
+  metrics:
+  - top1
+  - top3
+  - per_class_f1
+  - confusion_matrix
+  - latency_ms
+  report_path: runs/{exp_id}/eval_report.json
+experiment:
+  name: kslr_lab_v0
+  output_dir: runs/
+  seed: 42
+input:
+  face:
+    coord_dims: 3
+    crop_margin: 0.15
+    crop_size: 64
+    num_landmarks: 97
+  hand:
+    coord_dims: 3
+    crop_margin: 0.25
+    crop_size: 64
+    num_hands: 2
+    num_landmarks: 21
+mediapipe:
+  face:
+    model_asset_path: models_assets/face_landmarker.task
+    num_faces: 1
+    output_face_blendshapes: false
+    output_facial_transformation_matrixes: false
+    running_mode: VIDEO
+  hand:
+    min_hand_detection_confidence: 0.5
+    min_hand_presence_confidence: 0.5
+    min_tracking_confidence: 0.5
+    model_asset_path: models_assets/hand_landmarker.task
+    num_hands: 2
+    running_mode: VIDEO
+model:
+  classifier:
+    out_dim: 10
+  cnn_branch:
+    channels:
+    - 32
+    - 64
+    - 64
+    - 128
+    out_dim: 128
+    pool_after:
+    - 0
+    - 2
+  face_landmark_embed:
+    proj_dim: 64
+    transformer:
+      heads: 4
+      mlp_ratio: 2
+  grain:
+    out_channels: 32
+  hand_landmark_embed:
+    proj_dim: 64
+    transformer:
+      heads: 4
+      mlp_ratio: 2
+  irffn:
+    dropout: 0.1
+    hidden_dim: 576
+  per_frame_fusion_dim: 192
+  temporal:
+    depth: 2
+    dim: 192
+    dropout: 0.1
+    heads: 4
+    mlp_ratio: 2
+    pos_embed: sinusoidal
+normalize:
+  face:
+    origin_landmark: 1
+    scale_landmarks:
+    - 61
+    - 291
+  hand:
+    origin_landmark: 0
+    scale_landmarks:
+    - 0
+    - 9
+realtime:
+  buffer_capacity: 16
+  latency_budget_ms: 300
+  smoothing:
+    alpha: 0.6
+    method: ema
+  stride: 8
+train:
+  amp: true
+  batch_size: 32
+  checkpoint:
+    save_best: true
+    save_every_n_epochs: 50
+    save_latest: true
+  dropout: 0.1
+  early_stopping:
+    metric: val_top1
+    mode: max
+    patience_epochs: 30
+  epochs: 300
+  grad_clip: 1.0
+  logging:
+    backend: tensorboard
+    log_every_n_steps: 20
+  loss:
+    label_smoothing: 0.1
+    name: cross_entropy
+  optimizer:
+    lr: 0.001
+    name: adam
+    weight_decay: 0.0001
+  scheduler:
+    min_lr: 1.0e-05
+    name: cosine_with_warmup
+    warmup_epochs: 5
